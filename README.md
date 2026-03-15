@@ -1,38 +1,68 @@
-# Warehouse Robot Management System Design
+# Warehouse Robot Management System
 
-## Objective
-Develop an efficient system that manages multiple types of robots—**Humanoid**, **Quadrotor**, and **Driver**—navigating a grid to reach their respective destinations while avoiding collisions.
+## Project Overview
+This project simulates an efficient management system for multiple types of robots navigating a warehouse grid. The system ensures that robots reach their destinations while avoiding collisions, using prioritized movement strategies.
 
-## Grid Initialization
-- Create a square **N x N** grid.
-- Randomly place **2 × N** robots on the grid.
-- Each robot has a type, initial position, and destination.
+## Features
+- **Robot Types**:
+  - **Humanoid**: Ground-based robot.
+  - **Driver**: Ground-based robot.
+  - **Quadrotor**: Aerial-based robot.
+- **Dynamic Grid Initialization**: Creates an $N \times N$ grid based on user input (between 3 and 10), with $2 \times N$ robots randomly placed.
+- **Prioritized Movement**:
+  - Robots move horizontally (X-axis) first, then vertically (Y-axis).
+  - Shortest paths are determined using Euclidean distance.
+- **Collision Avoidance**:
+  - Ground-based robots avoid collisions with each other.
+  - Aerial-based robots avoid collisions with each other.
+  - Priorities are given to robots closer to their destinations.
+  - Ties are resolved randomly.
+- **Visualization**: Real-time plotting of robot movements using `matplotlib`.
 
-## Robot Types & Properties
-- Three types: Humanoid, Quadrotor, Driver
-- Each robot has a defined start location and target destination.
+## Technical Information
 
-## Movement Strategy
-- Robots move stepwise towards destinations:
-  - First move horizontally along the X-axis.
-  - Then move vertically along the Y-axis.
-- Path chosen based on Euclidean distance for shortest route.
+### Project Structure
+```text
+.
+├── assets/             # Documentation assets and images
+├── src/                # Source code
+│   ├── grid.py         # Grid management and visualization logic
+│   ├── robot.py        # Robot classes and property definitions
+│   └── simulation.py   # Movement logic and collision resolution
+├── main.py             # Application entry point
+├── requirements.txt    # Project dependencies
+└── README.md           # Project documentation
+```
 
-## Collision Avoidance
-- If two robots attempt to move to the same position:
-  - Priority given to the robot closer to its destination.
-  - If distances are equal, movement is decided randomly (e.g., coin toss).
+### Design Principles
+- **Object-Oriented Programming (OOP)**: Each robot and the grid itself are represented as objects, allowing for cleaner state management and extensibility.
+- **Modularity**: Logic is separated into distinct modules for grid management, robot behavior, and simulation control.
 
-## Decider Function (`decider()`)
-- Iterates over all robots to determine their next move.
-- Calls movement functions (`move_x()`, `move_y()`) to update positions.
-- Checks and resolves collisions through `collision_avoidance()`.
-- Updates the grid and visualizes new positions.
+## Dependencies & Installation
 
-## Visualization
-- Uses **matplotlib** to plot robot movements and destinations.
-- Different colors represent different robot types.
+### Prerequisites
+- Python 3.x
+- `pip` (Python package manager)
 
-## Execution Flow
-- Continuously updates positions until all robots reach their destinations.
-- Ensures efficient, collision-free navigation within the warehouse grid.
+### Installation
+1. Clone the repository:
+   ```bash
+   git clone <repository-url>
+   cd warehouse-robot-management
+   ```
+2. Install dependencies:
+   ```bash
+   pip install -r requirements.txt
+   ```
+
+## Usage Instructions
+
+1. Run the simulation:
+   ```bash
+   python3 main.py
+   ```
+2. Enter the grid size $N$ when prompted (between 3 and 10).
+3. Observe the `matplotlib` window for the step-by-step movement of robots. Close the plot window to proceed to the next simulation step.
+
+## License
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
