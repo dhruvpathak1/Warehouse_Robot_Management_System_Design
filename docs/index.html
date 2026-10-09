@@ -1,0 +1,785 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="description" content="Interactive warehouse robot simulator: set the fleet and right-of-way rules, then watch moves, collisions and resolutions step by step.">
+<title>Warehouse Robot Simulator</title>
+<style>
+:root{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+body{margin:0}
+img{max-width:100%}
+[hidden]{display:none!important}
+</style>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700&family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<style>
+/* Layout: control desk (rules) | floor plan with transport bar | event log terminal. Collapses to two, then one column. */
+:root{
+  --bg:#eceee9; --surface:#f8f9f6; --floor:#e2e5df; --line:#c9cec6; --ink:#1c2125; --muted:#5f6a66;
+  --accent:#e3a21a; --accent-ink:#1c1505; --warn:#d98b00; --danger:#b3227d; --ok:#24804b;
+  --humanoid:#2f69cf; --driver:#23874f; --quadrotor:#cf3b33;
+  --term-bg:#151a1d; --term-fg:#cfd6d1; --term-muted:#7b8781; --term-line:#252c30;
+  --font-display:"Barlow Condensed","Arial Narrow",system-ui,sans-serif;
+  --font-body:"IBM Plex Sans",system-ui,-apple-system,"Segoe UI",sans-serif;
+  --font-mono:"IBM Plex Mono",ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  --r:8px;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#121618; --surface:#1a1f22; --floor:#171c1f; --line:#2b3337; --ink:#e3e7e3; --muted:#8d9893;
+  --accent:#f0b432; --accent-ink:#1c1505; --warn:#f0a929; --danger:#ef5fb8; --ok:#4fcf85;
+  --humanoid:#6aa0ff; --driver:#4fcf85; --quadrotor:#ff6f66;
+  --term-bg:#0c0f11; --term-fg:#cfd6d1; --term-muted:#6f7a75; --term-line:#20272b; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#121618; --surface:#1a1f22; --floor:#171c1f; --line:#2b3337; --ink:#e3e7e3; --muted:#8d9893;
+  --accent:#f0b432; --accent-ink:#1c1505; --warn:#f0a929; --danger:#ef5fb8; --ok:#4fcf85;
+  --humanoid:#6aa0ff; --driver:#4fcf85; --quadrotor:#ff6f66;
+  --term-bg:#0c0f11; --term-fg:#cfd6d1; --term-muted:#6f7a75; --term-line:#20272b; color-scheme:dark}
+
+*{box-sizing:border-box}
+body{background:var(--bg);color:var(--ink);font-family:var(--font-body);font-size:14px;line-height:1.45}
+button,input,select{font:inherit;color:inherit}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+
+.top{display:flex;flex-wrap:wrap;align-items:baseline;gap:6px 18px;max-width:1520px;margin:0 auto;padding-inline:16px;padding-block:18px 6px}
+.top h1{font-family:var(--font-display);font-weight:700;font-size:30px;letter-spacing:.01em;text-transform:uppercase;margin:0;line-height:1;text-wrap:balance}
+.repo-btn{order:2;margin-left:auto;align-self:center;display:inline-flex;align-items:center;padding:8px 14px;border-radius:6px;background:var(--ink);color:var(--surface)!important;text-decoration:none;font-weight:600;font-size:13.5px}
+.repo-btn:hover{background:var(--accent);color:var(--accent-ink)!important}
+.top p{order:3;flex-basis:100%}
+.top p{margin:0;color:var(--muted);max-width:70ch}
+.top a{color:inherit}
+
+.app{display:grid;grid-template-columns:292px minmax(0,1fr) 380px;gap:16px;max-width:1520px;margin:0 auto;padding-inline:16px;padding-block:12px 24px;align-items:start}
+@media (max-width:1240px){.app{grid-template-columns:286px minmax(0,1fr)}.term{grid-column:1 / -1}}
+@media (max-width:780px){.app{grid-template-columns:minmax(0,1fr)}}
+
+.panel{background:var(--surface);border:1px solid var(--line);border-radius:var(--r)}
+.desk{display:flex;flex-direction:column}
+.sec{padding:14px 16px;display:flex;flex-direction:column;gap:10px;border-bottom:1px solid var(--line)}
+.sec:last-child{border-bottom:0}
+.label{font-family:var(--font-display);font-weight:600;text-transform:uppercase;letter-spacing:.08em;font-size:13px;color:var(--muted)}
+.row{display:flex;align-items:center;gap:10px;justify-content:space-between}
+.row > span{min-width:0}
+.hint{font-size:12px;color:var(--muted)}
+.hint.err{color:var(--danger)}
+
+input[type=range]{accent-color:var(--accent);width:100%}
+.nval{font-family:var(--font-mono);font-variant-numeric:tabular-nums;font-weight:600;min-width:3.6ch;text-align:right}
+
+.fleet-row{display:grid;grid-template-columns:auto 1fr auto;align-items:center;gap:10px}
+.sw{width:18px;height:18px;display:grid;place-items:center}
+.sw svg{display:block}
+.fleet-name{display:flex;flex-direction:column;line-height:1.15}
+.fleet-name small{color:var(--muted);font-size:11.5px}
+.stepper{display:flex;align-items:center;border:1px solid var(--line);border-radius:6px;overflow:hidden;background:var(--bg)}
+.stepper button{border:0;background:transparent;width:28px;height:30px;cursor:pointer;font-weight:600}
+.stepper button:hover{background:var(--floor)}
+.stepper input{width:38px;border:0;background:transparent;text-align:center;font-family:var(--font-mono);font-variant-numeric:tabular-nums;-moz-appearance:textfield;padding:0}
+.stepper input::-webkit-outer-spin-button,.stepper input::-webkit-inner-spin-button{-webkit-appearance:none;margin:0}
+
+.seg{display:grid;grid-auto-flow:column;grid-auto-columns:1fr;border:1px solid var(--line);border-radius:6px;overflow:hidden;background:var(--bg)}
+.seg input{position:absolute;opacity:0;pointer-events:none}
+.seg label{text-align:center;padding:6px 8px;cursor:pointer;font-size:13px;border-left:1px solid var(--line)}
+.seg label:first-of-type{border-left:0}
+.seg input:checked + label{background:var(--ink);color:var(--surface);font-weight:500}
+.seg input:focus-visible + label{outline:2px solid var(--accent);outline-offset:-2px}
+.field{display:flex;flex-direction:column;gap:5px}
+.field > span{font-size:12.5px;color:var(--muted)}
+select,.txt{width:100%;padding:6px 8px;border:1px solid var(--line);border-radius:6px;background:var(--bg)}
+
+.sw-row{display:grid;grid-template-columns:1fr auto;gap:10px;align-items:start;cursor:pointer}
+.sw-row b{font-weight:500;display:block}
+.sw-row small{color:var(--muted);font-size:12px;display:block}
+.toggle{appearance:none;width:34px;height:20px;border-radius:20px;background:var(--line);position:relative;cursor:pointer;margin:2px 0 0;transition:background .15s}
+.toggle::after{content:"";position:absolute;top:3px;left:3px;width:14px;height:14px;border-radius:50%;background:var(--surface);transition:transform .15s}
+.toggle:checked{background:var(--accent)}
+.toggle:checked::after{transform:translateX(14px)}
+
+.presets{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.btn{border:1px solid var(--line);background:var(--bg);border-radius:6px;padding:7px 10px;cursor:pointer;font-weight:500}
+.btn:hover{border-color:var(--muted)}
+.run{border:0;background:var(--accent);color:var(--accent-ink);border-radius:6px;padding:11px 14px;cursor:pointer;font-family:var(--font-display);font-weight:700;font-size:19px;text-transform:uppercase;letter-spacing:.06em;width:100%}
+.run:hover{filter:brightness(1.05)}
+.run:disabled{opacity:.45;cursor:not-allowed}
+.dirty{font-size:12px;color:var(--warn);min-height:1em}
+
+/* stage */
+.stage{display:flex;flex-direction:column;gap:12px;min-width:0}
+.stats{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));border:1px solid var(--line);border-radius:var(--r);background:var(--surface);overflow:hidden}
+.stat{padding:9px 12px;border-left:1px solid var(--line);min-width:0}
+.stat:first-child{border-left:0}
+.stat .k{font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);font-family:var(--font-display);font-weight:600}
+.stat .v{font-family:var(--font-mono);font-variant-numeric:tabular-nums;font-size:18px;font-weight:600;white-space:nowrap}
+.stat .v small{font-size:12px;color:var(--muted);font-weight:400}
+.v.warn{color:var(--warn)} .v.danger{color:var(--danger)}
+@media (max-width:560px){.stats{grid-template-columns:repeat(3,minmax(0,1fr))}.stat:nth-child(4){border-left:0}.stat:nth-child(n+4){border-top:1px solid var(--line)}}
+
+.floorwrap{position:relative;width:100%;max-width:min(100%,720px);aspect-ratio:1;margin-inline:auto;background:var(--surface);border:1px solid var(--line);border-radius:var(--r)}
+canvas{display:block;width:100%;height:100%}
+.status{position:absolute;top:10px;right:10px;font-family:var(--font-display);font-weight:700;text-transform:uppercase;letter-spacing:.08em;font-size:13px;padding:3px 9px;border-radius:4px;background:var(--ink);color:var(--surface)}
+.status.ok{background:var(--ok);color:#fff}
+.status.bad{background:var(--danger);color:#fff}
+.status.run{background:var(--accent);color:var(--accent-ink)}
+
+.transport{display:flex;flex-wrap:wrap;align-items:center;gap:8px;background:var(--surface);border:1px solid var(--line);border-radius:var(--r);padding:8px 10px}
+.ib{width:36px;height:36px;display:grid;place-items:center;border:1px solid var(--line);border-radius:6px;background:var(--bg);cursor:pointer}
+.ib:hover{border-color:var(--muted)}
+.ib.play{width:44px;background:var(--ink);color:var(--surface);border-color:var(--ink)}
+.ib svg{width:16px;height:16px;fill:currentColor}
+.scrub{flex:1 1 160px;min-width:120px;display:flex;align-items:center;gap:8px}
+.scrub output{font-family:var(--font-mono);font-variant-numeric:tabular-nums;font-size:12.5px;color:var(--muted);white-space:nowrap}
+.speed{width:auto}
+.legend{display:flex;flex-wrap:wrap;gap:6px 16px;font-size:12.5px;color:var(--muted);justify-content:center}
+.legend span{display:inline-flex;align-items:center;gap:6px}
+.legend i{display:inline-block;width:12px;height:12px;border-radius:50%;border:2px solid var(--warn)}
+.legend i.x{border-color:var(--danger);background:color-mix(in srgb,var(--danger) 25%,transparent)}
+.kbd{font-family:var(--font-mono);font-size:11px;border:1px solid var(--line);border-radius:3px;padding:0 4px}
+
+.about{padding:18px 20px;display:flex;flex-direction:column;gap:12px}
+.about h2{font-family:var(--font-display);font-weight:700;text-transform:uppercase;letter-spacing:.04em;font-size:22px;margin:0;line-height:1.1}
+.about > p{margin:0;max-width:72ch}
+.about-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px 24px}
+@media (max-width:640px){.about-grid{grid-template-columns:minmax(0,1fr)}}
+.about h3{font-family:var(--font-display);font-weight:600;text-transform:uppercase;letter-spacing:.08em;font-size:13px;color:var(--muted);margin:0 0 6px}
+.about ul{margin:0;padding-left:18px;display:flex;flex-direction:column;gap:5px}
+.about li b{font-weight:600}
+
+/* terminal */
+.term{background:var(--term-bg);color:var(--term-fg);border-radius:var(--r);display:flex;flex-direction:column;min-width:0;height:min(820px,calc(100vh - 110px));min-height:420px;overflow:hidden}
+@media (max-width:1240px){.term{height:440px}}
+.term-head{display:flex;flex-wrap:wrap;align-items:center;gap:8px;justify-content:space-between;padding:9px 12px;border-bottom:1px solid var(--term-line)}
+.term-head .dots{display:flex;gap:6px;align-items:center;font-family:var(--font-mono);font-size:12px;color:var(--term-muted)}
+.term-head .dots i{width:9px;height:9px;border-radius:50%;background:var(--term-line);display:inline-block}
+.chips{display:flex;gap:6px}
+.chip{font-family:var(--font-mono);font-size:11.5px;border:1px solid var(--term-line);background:transparent;color:var(--term-muted);border-radius:4px;padding:2px 7px;cursor:pointer}
+.chip[aria-pressed="true"]{color:var(--term-fg);border-color:var(--term-muted)}
+.log{flex:1;overflow:auto;padding:8px 0 14px;font-family:var(--font-mono);font-size:12.3px;line-height:1.6}
+.grp{padding:2px 12px;border-left:2px solid transparent}
+.grp.cur{border-left-color:var(--accent);background:color-mix(in srgb,var(--accent) 7%,transparent)}
+.sh{color:var(--term-muted);cursor:pointer;display:block;user-select:none}
+.sh:hover{color:var(--term-fg)}
+.ln{white-space:pre-wrap;word-break:break-word;padding-left:2ch;text-indent:-2ch}
+.tag{display:inline-block;min-width:9ch;font-weight:600}
+.k-move{color:var(--term-muted)} .k-move .tag{color:var(--term-muted)}
+.k-detect .tag{color:#f0a929}
+.k-resolve .tag{color:#7cc4ff}
+.k-crash{color:#ff8fd0} .k-crash .tag{color:#ff6fc4}
+.k-arrive .tag{color:#5fd68f}
+.k-info .tag{color:var(--term-fg)}
+.k-end .tag{color:#f0b432}
+.rid{font-weight:600}
+.c-humanoid{color:#7fb0ff} .c-driver{color:#5fd68f} .c-quadrotor{color:#ff8079}
+.log.hide-move .k-move,.log.hide-col .k-detect,.log.hide-col .k-resolve,.log.hide-col .k-crash,.log.hide-arr .k-arrive{display:none}
+.cursor{display:inline-block;width:7px;height:13px;background:var(--term-fg);vertical-align:-2px;animation:blink 1s steps(1) infinite;margin-left:12px}
+@keyframes blink{50%{opacity:0}}
+@media (prefers-reduced-motion: reduce){.cursor{animation:none}.toggle,.toggle::after{transition:none}}
+</style>
+</head>
+<body>
+
+<header class="top">
+  <h1>Warehouse Robot Simulator</h1>
+  <a class="repo-btn" href="https://github.com/dhruvpathak1/Warehouse_Robot_Management_System_Design" target="_blank" rel="noopener">GitHub Repo Code Link</a>
+</header>
+
+<main class="app">
+  <!-- Control desk -->
+  <form class="panel desk" id="cfg" autocomplete="off">
+    <div class="sec">
+      <div class="row"><span class="label">Floor size</span><output class="nval" id="nOut">8×8</output></div>
+      <input type="range" id="n" min="3" max="14" value="8" aria-label="Grid size N">
+    </div>
+
+    <div class="sec">
+      <span class="label">Fleet</span>
+      <div class="fleet-row">
+        <span class="sw" aria-hidden="true"><svg width="16" height="16" viewBox="0 0 16 16"><circle cx="8" cy="8" r="7" fill="var(--humanoid)"/></svg></span>
+        <span class="fleet-name">Humanoid<small>Ground</small></span>
+        <span class="stepper"><button type="button" data-step="h" data-d="-1" aria-label="Fewer humanoids">−</button><input type="number" id="h" min="0" max="99" value="6" aria-label="Humanoids"><button type="button" data-step="h" data-d="1" aria-label="More humanoids">+</button></span>
+      </div>
+      <div class="fleet-row">
+        <span class="sw" aria-hidden="true"><svg width="16" height="16" viewBox="0 0 16 16"><rect x="1" y="1" width="14" height="14" rx="3" fill="var(--driver)"/></svg></span>
+        <span class="fleet-name">Driver<small>Ground</small></span>
+        <span class="stepper"><button type="button" data-step="d" data-d="-1" aria-label="Fewer drivers">−</button><input type="number" id="d" min="0" max="99" value="5" aria-label="Drivers"><button type="button" data-step="d" data-d="1" aria-label="More drivers">+</button></span>
+      </div>
+      <div class="fleet-row">
+        <span class="sw" aria-hidden="true"><svg width="16" height="16" viewBox="0 0 16 16"><path d="M8 1 15 8 8 15 1 8Z" fill="var(--quadrotor)"/></svg></span>
+        <span class="fleet-name">Quadrotor<small>Aerial</small></span>
+        <span class="stepper"><button type="button" data-step="q" data-d="-1" aria-label="Fewer quadrotors">−</button><input type="number" id="q" min="0" max="99" value="5" aria-label="Quadrotors"><button type="button" data-step="q" data-d="1" aria-label="More quadrotors">+</button></span>
+      </div>
+      <span class="hint" id="cap"></span>
+      <div class="field"><span>Layout seed</span>
+        <div class="row"><input class="txt" type="number" id="seed" value="2506" aria-label="Seed"><button type="button" class="btn" id="shuffle">Shuffle</button></div>
+      </div>
+    </div>
+
+    <div class="sec">
+      <span class="label">Rules</span>
+      <div class="field"><span>Path order</span>
+        <div class="seg" role="radiogroup" aria-label="Path order">
+          <input type="radio" name="order" id="ordXY" value="xy" checked><label for="ordXY">X then Y</label>
+          <input type="radio" name="order" id="ordYX" value="yx"><label for="ordYX">Y then X</label>
+        </div>
+      </div>
+      <label class="field"><span>Right of way</span>
+        <select id="prio">
+          <option value="closer">Closer to goal goes first</option>
+          <option value="farther">Farther from goal goes first</option>
+          <option value="id">Lower robot ID goes first</option>
+        </select>
+      </label>
+      <div class="field"><span>Tie-break</span>
+        <div class="seg" role="radiogroup" aria-label="Tie-break">
+          <input type="radio" name="tie" id="tieR" value="random" checked><label for="tieR">Coin flip</label>
+          <input type="radio" name="tie" id="tieI" value="id"><label for="tieI">Lower ID</label>
+        </div>
+      </div>
+      <label class="sw-row"><span><b>Re-check after each yield</b><small>Repeat until no conflicts remain. Off = one pass, like the repo.</small></span><input type="checkbox" class="toggle" id="iterate"></label>
+      <label class="sw-row"><span><b>Waiting robots keep their cell</b><small>Off = distance decides even against a robot standing still, like the repo.</small></span><input type="checkbox" class="toggle" id="hold"></label>
+      <label class="sw-row"><span><b>Detect head-on swaps</b><small>Two robots trading cells in one step.</small></span><input type="checkbox" class="toggle" id="swap"></label>
+      <label class="sw-row"><span><b>Sidestep when blocked</b><small>Loser tries its other axis before waiting.</small></span><input type="checkbox" class="toggle" id="sidestep"></label>
+      <label class="sw-row"><span><b>Detour when stuck</b><small>After waiting 2 steps, plan a path around parked robots.</small></span><input type="checkbox" class="toggle" id="detour"></label>
+      <label class="sw-row"><span><b>Air and ground collide</b><small>Off = quadrotors fly over ground robots.</small></span><input type="checkbox" class="toggle" id="cross"></label>
+      <div class="presets">
+        <button type="button" class="btn" id="presetRepo">Repo rules</button>
+        <button type="button" class="btn" id="presetSafe">Safer rules</button>
+      </div>
+    </div>
+
+    <div class="sec">
+      <button type="submit" class="run" id="runBtn">Run simulation</button>
+      <span class="dirty" id="dirty"></span>
+    </div>
+  </form>
+
+  <!-- Floor -->
+  <section class="stage" aria-label="Simulation">
+    <div class="stats">
+      <div class="stat"><div class="k">Step</div><div class="v" id="sStep">0</div></div>
+      <div class="stat"><div class="k">Arrived</div><div class="v" id="sArr">0</div></div>
+      <div class="stat"><div class="k">Detected</div><div class="v warn" id="sDet">0</div></div>
+      <div class="stat"><div class="k">Resolved</div><div class="v" id="sRes">0</div></div>
+      <div class="stat"><div class="k">Unresolved</div><div class="v danger" id="sCrash">0</div></div>
+    </div>
+    <div class="floorwrap">
+      <canvas id="cv" role="img" aria-label="Warehouse floor with robots"></canvas>
+      <span class="status" id="status">Ready</span>
+    </div>
+    <div class="transport">
+      <button class="ib" id="bStart" title="Back to start (Home)" aria-label="Back to start"><svg viewBox="0 0 16 16"><path d="M2 2h2v12H2zM14 2v12L5 8z"/></svg></button>
+      <button class="ib" id="bPrev" title="Previous step (Left arrow)" aria-label="Previous step"><svg viewBox="0 0 16 16"><path d="M12 2v12L3 8z"/></svg></button>
+      <button class="ib play" id="bPlay" title="Play or pause (Space)" aria-label="Play"><svg viewBox="0 0 16 16" id="playIco"><path d="M4 2v12l10-6z"/></svg></button>
+      <button class="ib" id="bNext" title="Next step (Right arrow)" aria-label="Next step"><svg viewBox="0 0 16 16"><path d="M4 2v12l9-6z"/></svg></button>
+      <div class="scrub"><input type="range" id="scrub" min="0" max="0" value="0" step="1" aria-label="Scrub steps"><output id="scrubOut">0 / 0</output></div>
+      <select id="speed" class="speed" aria-label="Playback speed">
+        <option value="0.5">0.5×</option><option value="1" selected>1×</option><option value="2">2×</option><option value="4">4×</option>
+      </select>
+      <label class="hint" style="display:flex;gap:6px;align-items:center"><input type="checkbox" id="routes" checked> Routes</label>
+    </div>
+    <div class="legend">
+      <span>Filled shape = robot, outline = its goal</span>
+      <span><i></i>Conflict detected</span>
+      <span><i class="x"></i>Unresolved collision</span>
+      <span><span class="kbd">Space</span> <span class="kbd">←</span> <span class="kbd">→</span></span>
+    </div>
+    <article class="about panel" aria-labelledby="aboutTitle">
+      <h2 id="aboutTitle">About the project</h2>
+      <p>The Warehouse Robot Management System simulates a mixed fleet moving across an N×N warehouse floor. Every robot has a start cell and a goal cell, and a central planner moves all robots one step at a time until each one reaches its goal without two robots occupying the same space.</p>
+      <div class="about-grid">
+        <section>
+          <h3>Robot types</h3>
+          <ul>
+            <li><b>Humanoid</b> and <b>Driver</b> are ground robots and share the floor.</li>
+            <li><b>Quadrotor</b> is aerial. It flies in its own layer, so it only conflicts with other quadrotors.</li>
+          </ul>
+        </section>
+        <section>
+          <h3>How a step works</h3>
+          <ul>
+            <li><b>Plan:</b> each robot picks the next cell toward its goal, closing the X gap first, then Y.</li>
+            <li><b>Detect:</b> two robots in the same layer that want the same cell are in conflict.</li>
+            <li><b>Resolve:</b> the robot closer to its goal (Euclidean distance) goes; the other waits. Ties are a coin flip.</li>
+            <li><b>Apply:</b> all moves happen at once, then the next step begins.</li>
+          </ul>
+        </section>
+        <section>
+          <h3>Repo rules vs Safer rules</h3>
+          <ul>
+            <li><b>Repo rules</b> match the Python code. Pairs are checked once, so a yield can create a new conflict that goes unseen, and robots parked on their goals can block others forever.</li>
+            <li><b>Safer rules</b> re-check until no conflicts remain, catch head-on swaps, and let blocked robots sidestep or plan a path around parked robots.</li>
+          </ul>
+        </section>
+        <section>
+          <h3>Reading the log</h3>
+          <ul>
+            <li><b>DETECT</b> a conflict was found. <b>YIELD</b>, <b>SIDESTEP</b>, <b>REROUTE</b>, <b>DETOUR</b> show how it was handled.</li>
+            <li><b>CRASH</b> two robots ended up in the same cell or passed through each other.</li>
+            <li><b>DEADLOCK</b> no robot could move for 6 steps.</li>
+          </ul>
+        </section>
+      </div>
+      <p class="hint">Built with Python, object-oriented design and matplotlib in the original repo. This page runs the same planner in the browser.</p>
+    </article>
+  </section>
+
+  <!-- Terminal -->
+  <section class="term" aria-label="Event log">
+    <div class="term-head">
+      <span class="dots"><i></i><i></i><i></i>&nbsp;sim.log</span>
+      <span class="chips">
+        <button class="chip" data-f="move" aria-pressed="true">moves</button>
+        <button class="chip" data-f="col" aria-pressed="true">collisions</button>
+        <button class="chip" data-f="arr" aria-pressed="true">arrivals</button>
+      </span>
+    </div>
+    <div class="log" id="log" aria-live="off"></div>
+  </section>
+</main>
+
+<script>
+(function(){
+"use strict";
+const $ = id => document.getElementById(id);
+const TYPES = ["humanoid","driver","quadrotor"];
+const ABBR = {humanoid:"humanoid", driver:"driver", quadrotor:"quadrotor"};
+const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+/* ---------- seeded RNG ---------- */
+function rngFrom(seed){let a=(seed>>>0)||1;return function(){a|=0;a=a+0x6D2B79F5|0;let t=Math.imul(a^a>>>15,1|a);t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296;};}
+function shuffle(arr,rnd){for(let i=arr.length-1;i>0;i--){const j=Math.floor(rnd()*(i+1));[arr[i],arr[j]]=[arr[j],arr[i]];}return arr;}
+const eq=(a,b)=>a[0]===b[0]&&a[1]===b[1];
+const fmt=p=>"("+p[0]+","+p[1]+")";
+const dist=(p,g)=>Math.round(Math.hypot(g[0]-p[0],g[1]-p[1])*10)/10;
+
+/* ---------- config ---------- */
+function readCfg(){
+  return {
+    n:+$("n").value,
+    counts:{humanoid:clampInt($("h").value),driver:clampInt($("d").value),quadrotor:clampInt($("q").value)},
+    seed:Math.abs(parseInt($("seed").value,10)||1),
+    order:document.querySelector('input[name=order]:checked').value,
+    prio:$("prio").value,
+    tie:document.querySelector('input[name=tie]:checked').value,
+    iterate:$("iterate").checked, hold:$("hold").checked, swap:$("swap").checked, sidestep:$("sidestep").checked, detour:$("detour").checked, cross:$("cross").checked
+  };
+}
+function clampInt(v){v=parseInt(v,10);return isFinite(v)&&v>0?Math.min(v,99):0;}
+
+function validate(c){
+  const cells=c.n*c.n, ground=c.counts.humanoid+c.counts.driver, air=c.counts.quadrotor, total=ground+air;
+  if(total===0) return {ok:false,msg:"Add at least one robot."};
+  if(c.cross){
+    if(total>cells) return {ok:false,msg:`${total} robots need ${total} cells; the floor has ${cells}.`};
+    return {ok:true,msg:`${total} robots on ${cells} cells (shared airspace).`};
+  }
+  if(ground>cells) return {ok:false,msg:`${ground} ground robots exceed ${cells} floor cells.`};
+  if(air>cells) return {ok:false,msg:`${air} quadrotors exceed ${cells} air cells.`};
+  return {ok:true,msg:`Ground ${ground}/${cells} cells · Air ${air}/${cells} cells`};
+}
+
+/* ---------- simulation engine ---------- */
+function simulate(c){
+  const rnd=rngFrom(c.seed), N=c.n;
+  const types=[];TYPES.forEach(t=>{for(let i=0;i<c.counts[t];i++)types.push(t);});
+  shuffle(types,rnd);
+  const allCells=[];for(let x=0;x<N;x++)for(let y=0;y<N;y++)allCells.push([x,y]);
+  const pools={};
+  function pool(key){if(!pools[key])pools[key]={s:shuffle(allCells.slice(),rnd),e:shuffle(allCells.slice(),rnd)};return pools[key];}
+  const robots=types.map((t,i)=>{
+    const aerial=t==="quadrotor", key=c.cross?"all":(aerial?"air":"ground"), p=pool(key);
+    return {id:i,type:t,aerial,pos:p.s.pop(),goal:p.e.pop(),next:null,waited:0,prev:null,bfs:false};
+  });
+  const sameLayer=(a,b)=>c.cross||a.aerial===b.aerial;
+  const layerName=(a,b)=>c.cross&&a.aerial!==b.aerial?"air/ground":(a.aerial?"air":"ground");
+  const R=r=>({id:r.id,type:r.type});
+  const arrived=r=>eq(r.pos,r.goal);
+  function bfsStep(r){
+    const key=p=>p[0]*N+p[1], block=new Set();
+    robots.forEach(o=>{if(o!==r&&sameLayer(o,r)&&arrived(o))block.add(key(o.pos));});
+    const prevMap=new Map([[key(r.pos),null]]), q=[r.pos];
+    while(q.length){
+      const cur=q.shift();
+      if(eq(cur,r.goal)){let p=cur;while(prevMap.get(key(p))&&!eq(prevMap.get(key(p)),r.pos))p=prevMap.get(key(p));return {step:p.slice()};}
+      for(const [dx,dy] of shuffle([[1,0],[-1,0],[0,1],[0,-1]],rnd)){
+        const nx=[cur[0]+dx,cur[1]+dy];
+        if(nx[0]<0||nx[1]<0||nx[0]>=N||nx[1]>=N||block.has(key(nx))||prevMap.has(key(nx)))continue;
+        prevMap.set(key(nx),cur);q.push(nx);
+      }
+    }
+    return null;
+  }
+  function primary(r){
+    if(r.bfs){const b=bfsStep(r);if(b)return b.step;}
+    const p=r.pos.slice(), g=r.goal;
+    const ax=c.order==="xy"?[0,1]:[1,0];
+    for(const a of ax){if(p[a]!==g[a]){p[a]+=g[a]>p[a]?1:-1;return p;}}
+    return p;
+  }
+  function alternate(r){
+    if(r.bfs)return null;
+    const g=r.goal, ax=c.order==="xy"?[0,1]:[1,0];
+    const used=ax.find(a=>r.pos[a]!==g[a]);
+    const other=used===0?1:0;
+    if(used===undefined||r.pos[other]===g[other])return null;
+    const p=r.pos.slice();p[other]+=g[other]>p[other]?1:-1;return p;
+  }
+  function beats(a,b,ev){ // returns winner
+    const da=dist(a.pos,a.goal), db=dist(b.pos,b.goal);
+    if(c.prio==="id"){ev.why=`lower ID`;return a.id<b.id?a:b;}
+    if(da!==db){
+      const w=c.prio==="closer"?(da<db?a:b):(da>db?a:b);
+      ev.why=`${c.prio==="closer"?"closer":"farther"}: ${dist(w.pos,w.goal).toFixed(1)} vs ${dist((w===a?b:a).pos,(w===a?b:a).goal).toFixed(1)}`;
+      return w;
+    }
+    if(c.tie==="id"){ev.why=`tie at ${da.toFixed(1)}, lower ID`;return a.id<b.id?a:b;}
+    ev.why=`tie at ${da.toFixed(1)}, coin flip`;return rnd()<.5?a:b;
+  }
+
+  const frames=[{pos:robots.map(r=>r.pos.slice()),events:[],marks:[],waits:[],stats:{det:0,res:0,crash:0,arr:robots.filter(arrived).length}}];
+  frames[0].events.push({k:"info",tag:"INIT",text:`${robots.length} robots on ${N}×${N} floor · seed ${c.seed}`});
+  frames[0].events.push({k:"info",tag:"RULES",text:`${c.order==="xy"?"X then Y":"Y then X"} · ${c.prio==="closer"?"closer first":c.prio==="farther"?"farther first":"lower ID first"} · ties ${c.tie==="random"?"coin flip":"lower ID"} · ${c.iterate?"re-check":"single pass"} · ${c.hold?"held cells respected":"distance only"} · swaps ${c.swap?"on":"off"} · sidestep ${c.sidestep?"on":"off"} · detour ${c.detour?"on":"off"} · ${c.cross?"shared airspace":"separate air layer"}`});
+  robots.filter(arrived).forEach(r=>frames[0].events.push({k:"arrive",tag:"ARRIVE",r:R(r),text:`already at goal ${fmt(r.goal)}`}));
+
+  let stats={...frames[0].stats}, stall=0, outcome="done";
+  const MAX=400;
+  for(let step=1;step<=MAX;step++){
+    if(robots.every(arrived)){outcome="done";break;}
+    const ev=[], marks=[], waits=new Set();
+    robots.forEach(r=>{r.next=arrived(r)?r.pos.slice():primary(r);r.side=false;});
+    if(c.detour){
+      const claimed=[];
+      robots.forEach(r=>{
+        if(arrived(r)||r.waited<2)return;
+        let fresh=false;
+        if(!r.bfs){
+          r.bfs=true;fresh=true;const b=bfsStep(r);
+          if(b&&!eq(b.step,r.next)){
+            ev.push({k:"resolve",tag:"REROUTE",r:R(r),text:`stuck ${r.waited} steps; plans a path around parked robots, next ${fmt(b.step)}`});
+            stats.res++;r.next=b.step;r.side=true;claimed.push({r,p:b.step});return;
+          }
+        }
+        if(fresh||rnd()<.5)return; // random back-off so two jammed robots don't mirror each other
+        const md=p=>Math.abs(r.goal[0]-p[0])+Math.abs(r.goal[1]-p[1]);
+        const opts=[[1,0],[-1,0],[0,1],[0,-1]].map(([dx,dy])=>[r.pos[0]+dx,r.pos[1]+dy])
+          .filter(p=>p[0]>=0&&p[1]>=0&&p[0]<N&&p[1]<N)
+          .filter(p=>!robots.some(o=>o!==r&&sameLayer(o,r)&&eq(o.pos,p)))
+          .filter(p=>!claimed.some(q=>q.r!==r&&sameLayer(q.r,r)&&eq(q.p,p)))
+          .map(p=>({p,score:md(p)+(r.prev&&eq(p,r.prev)?2:0)+rnd()*2}))
+          .sort((x,y)=>x.score-y.score);
+        if(!opts.length)return;
+        const pick=opts[0].p;
+        if(eq(pick,r.next))return;
+        ev.push({k:"resolve",tag:"DETOUR",r:R(r),text:`${fmt(r.pos)} → ${fmt(pick)} to break a jam after waiting ${r.waited} steps`});
+        stats.res++;r.next=pick;r.side=true;claimed.push({r,p:pick});
+      });
+    }
+    const passes=c.iterate?robots.length*4+4:1;
+    for(let pass=0;pass<passes;pass++){
+      let changed=false;
+      for(let i=0;i<robots.length;i++)for(let j=i+1;j<robots.length;j++){
+        const a=robots[i],b=robots[j];
+        if(!sameLayer(a,b))continue;
+        const same=eq(a.next,b.next);
+        const aMov=!eq(a.next,a.pos), bMov=!eq(b.next,b.pos);
+        const swp=c.swap&&aMov&&bMov&&eq(a.next,b.pos)&&eq(b.next,a.pos);
+        if(!same&&!swp)continue;
+        if(same&&!aMov&&!bMov)continue;
+        const cell=a.next.slice();
+        const d={k:"detect",tag:"DETECT"};
+        if(swp){d.text=`head-on swap ${fmt(a.pos)}⇄${fmt(b.pos)} [${layerName(a,b)}]`;d.pair=[R(a),R(b)];marks.push({cell:a.pos.slice(),cell2:b.pos.slice(),kind:"detect"});}
+        else{d.text=`both want ${fmt(cell)} [${layerName(a,b)}]`;d.pair=[R(a),R(b)];marks.push({cell,kind:"detect"});}
+        ev.push(d);stats.det++;
+        let winner,loser,res={};
+        if(c.hold&&same&&!aMov){winner=a;loser=b;res.why=`cell held by R${a.id}`;}
+        else if(c.hold&&same&&!bMov){winner=b;loser=a;res.why=`cell held by R${b.id}`;}
+        else{winner=beats(a,b,res);loser=winner===a?b:a;}
+        if(eq(loser.next,loser.pos)){
+          // repo behaviour: the "loser" is already standing still, so telling it to wait changes nothing
+          ev.push({k:"resolve",tag:"YIELD",r:R(loser),text:`told to wait, but it is already stationary at ${fmt(loser.pos)}; R${winner.id} still enters (${res.why})`});
+          continue;
+        }
+        // try sidestep
+        let alt=c.sidestep&&!loser.side?alternate(loser):null;
+        if(alt){
+          const busy=robots.some(o=>o!==loser&&sameLayer(o,loser)&&(eq(o.next,alt)||(eq(o.pos,alt)&&eq(o.next,loser.pos))));
+          if(busy)alt=null;
+        }
+        if(alt){
+          loser.next=alt;loser.side=true;
+          ev.push({k:"resolve",tag:"SIDESTEP",r:R(loser),text:`${fmt(loser.pos)} → ${fmt(alt)} to route around R${winner.id} (${res.why})`});
+        }else{
+          loser.next=loser.pos.slice();waits.add(loser.id);
+          ev.push({k:"resolve",tag:"YIELD",r:R(loser),text:`waits at ${fmt(loser.pos)}; R${winner.id} has right of way (${res.why})`});
+        }
+        stats.res++;changed=true;
+      }
+      if(!changed)break;
+    }
+    // apply
+    const prev=robots.map(r=>r.pos.slice());
+    let moved=0;
+    robots.forEach((r,i)=>{
+      if(!eq(r.next,r.pos)){
+        moved++;
+        ev.push({k:"move",tag:"MOVE",r:R(r),text:`${fmt(r.pos)} → ${fmt(r.next)}`});
+        r.pos=r.next.slice();
+        if(arrived(r)){ev.push({k:"arrive",tag:"ARRIVE",r:R(r),text:`reached goal ${fmt(r.goal)} in ${step} steps`});stats.arr++;}
+      }
+    });
+    // post-check: anything the resolver missed
+    const occ=new Map();
+    robots.forEach(r=>{
+      const key=(c.cross?"x":(r.aerial?"a":"g"))+r.pos[0]+","+r.pos[1];
+      if(!occ.has(key))occ.set(key,[]);occ.get(key).push(r);
+    });
+    occ.forEach(list=>{
+      if(list.length>1){
+        stats.crash++;marks.push({cell:list[0].pos.slice(),kind:"crash"});
+        ev.push({k:"crash",tag:"CRASH",text:`${list.map(r=>"R"+r.id).join(" + ")} share ${fmt(list[0].pos)} [${list[0].aerial&&!c.cross?"air":"ground"}], missed by the resolver`,pair:list.map(R)});
+      }
+    });
+    if(!c.swap){
+      for(let i=0;i<robots.length;i++)for(let j=i+1;j<robots.length;j++){
+        const a=robots[i],b=robots[j];
+        if(!sameLayer(a,b))continue;
+        if(eq(prev[i],b.pos)&&eq(prev[j],a.pos)&&!eq(prev[i],prev[j])){
+          stats.crash++;marks.push({cell:a.pos.slice(),cell2:b.pos.slice(),kind:"crash"});
+          ev.push({k:"crash",tag:"CRASH",text:`R${a.id} and R${b.id} drove through each other between ${fmt(prev[i])} and ${fmt(prev[j])}`,pair:[R(a),R(b)]});
+        }
+      }
+    }
+    robots.forEach((r,i)=>{
+      if(!arrived(r)&&eq(prev[i],r.pos)){waits.add(r.id);r.waited++;}
+      else{r.waited=0;if(!eq(prev[i],r.pos))r.prev=prev[i];}
+    });
+    stall=moved===0?stall+1:0;
+    if(stall>=6){
+      const stuck=robots.filter(r=>!arrived(r)).map(r=>"R"+r.id);
+      ev.push({k:"end",tag:"DEADLOCK",text:`no robot moved for 6 steps. Stuck: ${stuck.join(", ")}`});
+      outcome="deadlock";
+    }
+    if(robots.every(arrived)){ev.push({k:"end",tag:"DONE",text:`all ${robots.length} robots at their goals after ${step} steps`});outcome="done";}
+    if(step===MAX&&outcome!=="deadlock"&&!robots.every(arrived)){ev.push({k:"end",tag:"STOP",text:`step limit ${MAX} reached; some robots kept circling`});outcome="limit";}
+    frames.push({pos:robots.map(r=>r.pos.slice()),events:ev,marks,waits:[...waits],stats:{...stats}});
+    if(outcome==="deadlock"||robots.every(arrived))break;
+  }
+  if(frames.length===1)frames[0].events.push({k:"end",tag:"DONE",text:"every robot already sits on its goal"});
+  return {cfg:c,robots:robots.map(r=>({id:r.id,type:r.type,aerial:r.aerial,goal:r.goal})),frames,outcome};
+}
+
+/* ---------- theme tokens for canvas ---------- */
+let T={};
+function readTokens(){const s=getComputedStyle(document.documentElement);["floor","line","ink","muted","surface","warn","danger","humanoid","driver","quadrotor","accent"].forEach(k=>T[k]=s.getPropertyValue("--"+k).trim());}
+readTokens();
+window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change",()=>{readTokens();draw();});
+new MutationObserver(()=>{readTokens();draw();}).observe(document.documentElement,{attributes:true,attributeFilter:["data-theme"]});
+
+/* ---------- state ---------- */
+let SIM=null, t=0, target=null, playing=false, lastTs=0, shownStep=-1;
+const cv=$("cv"), ctx=cv.getContext("2d");
+let W=0, DPR=1;
+function resize(){const r=cv.getBoundingClientRect();DPR=Math.min(window.devicePixelRatio||1,2);W=r.width;cv.width=Math.round(r.width*DPR);cv.height=Math.round(r.height*DPR);draw();}
+new ResizeObserver(resize).observe(cv);
+
+/* ---------- drawing ---------- */
+function geom(){const N=SIM.cfg.n, m=Math.max(18,W*0.045), cell=(W-2*m)/N;return {N,m,cell,cx:x=>m+(x+.5)*cell,cy:y=>m+(N-1-y+.5)*cell};}
+function shape(type,x,y,s,fill,stroke,lw){
+  ctx.beginPath();
+  if(type==="humanoid"){ctx.arc(x,y,s,0,Math.PI*2);}
+  else if(type==="driver"){const h=s*.95,rr=s*.3;ctx.roundRect?ctx.roundRect(x-h,y-h,2*h,2*h,rr):ctx.rect(x-h,y-h,2*h,2*h);}
+  else{ctx.moveTo(x,y-s*1.1);ctx.lineTo(x+s*1.1,y);ctx.lineTo(x,y+s*1.1);ctx.lineTo(x-s*1.1,y);ctx.closePath();}
+  if(fill){ctx.fillStyle=fill;ctx.fill();}
+  if(stroke){ctx.strokeStyle=stroke;ctx.lineWidth=lw||2;ctx.stroke();}
+}
+const ease=f=>f<.5?2*f*f:1-Math.pow(-2*f+2,2)/2;
+function draw(){
+  if(!SIM||!W)return;
+  ctx.setTransform(DPR,0,0,DPR,0,0);ctx.clearRect(0,0,W,W);
+  const g=geom(), {N,m,cell}=g, F=SIM.frames;
+  const k1=Math.min(Math.ceil(t-1e-9),F.length-1), k0=Math.max(0,Math.floor(t+1e-9)===k1?k1:k1-1);
+  const f=k1===k0?1:ease(t-Math.floor(t));
+  // floor
+  ctx.fillStyle=T.floor;ctx.fillRect(m,m,N*cell,N*cell);
+  ctx.strokeStyle=T.line;ctx.lineWidth=1;
+  for(let i=0;i<=N;i++){ctx.beginPath();ctx.moveTo(m+i*cell,m);ctx.lineTo(m+i*cell,m+N*cell);ctx.stroke();ctx.beginPath();ctx.moveTo(m,m+i*cell);ctx.lineTo(m+N*cell,m+i*cell);ctx.stroke();}
+  ctx.fillStyle=T.muted;ctx.font=`500 ${Math.max(9,Math.min(12,cell*.24))}px "IBM Plex Mono",monospace`;ctx.textAlign="center";ctx.textBaseline="middle";
+  for(let i=0;i<N;i++){ctx.fillText(i,g.cx(i),m+N*cell+m*.5);ctx.fillText(i,m*.5,g.cy(i));}
+  const s=cell*.27, fs=Math.max(8,Math.min(13,cell*.22));
+  const pos=SIM.robots.map((r,i)=>{const a=F[k0].pos[i],b=F[k1].pos[i];return [a[0]+(b[0]-a[0])*f,a[1]+(b[1]-a[1])*f];});
+  const cur=F[k1].pos;
+  // goals
+  SIM.robots.forEach((r,i)=>{
+    const done=eq(cur[i],r.goal)&&f>=1;
+    ctx.globalAlpha=done?.25:.75;
+    shape(r.type,g.cx(r.goal[0]),g.cy(r.goal[1]),s*1.25,null,T[r.type],1.6);
+    ctx.globalAlpha=1;
+  });
+  // routes
+  if($("routes").checked){
+    ctx.setLineDash([4,4]);ctx.lineWidth=1.5;
+    SIM.robots.forEach((r,i)=>{
+      const p=pos[i];if(Math.abs(p[0]-r.goal[0])<.01&&Math.abs(p[1]-r.goal[1])<.01)return;
+      const corner=SIM.cfg.order==="xy"?[r.goal[0],p[1]]:[p[0],r.goal[1]];
+      ctx.strokeStyle=T[r.type];ctx.globalAlpha=.4;
+      ctx.beginPath();ctx.moveTo(m+(p[0]+.5)*cell,m+(N-1-p[1]+.5)*cell);ctx.lineTo(m+(corner[0]+.5)*cell,m+(N-1-corner[1]+.5)*cell);ctx.lineTo(g.cx(r.goal[0]),g.cy(r.goal[1]));ctx.stroke();
+    });
+    ctx.setLineDash([]);ctx.globalAlpha=1;
+  }
+  // conflict marks for current transition
+  if(k1>0){
+    const pulse=reduceMotion?1:(k1===k0?1:.4+.6*Math.sin(Math.min(1,t-Math.floor(t))*Math.PI));
+    F[k1].marks.forEach(mk=>{
+      [mk.cell,mk.cell2].filter(Boolean).forEach(cc=>{
+        const x=g.cx(cc[0]),y=g.cy(cc[1]);
+        ctx.globalAlpha=pulse;
+        if(mk.kind==="crash"){
+          ctx.fillStyle=T.danger;ctx.globalAlpha=.22*pulse;ctx.fillRect(x-cell/2+1,y-cell/2+1,cell-2,cell-2);
+          ctx.globalAlpha=pulse;ctx.strokeStyle=T.danger;ctx.lineWidth=2.5;ctx.strokeRect(x-cell/2+2,y-cell/2+2,cell-4,cell-4);
+        }else{
+          ctx.strokeStyle=T.warn;ctx.lineWidth=2.5;ctx.beginPath();ctx.arc(x,y,cell*.46,0,Math.PI*2);ctx.stroke();
+        }
+        ctx.globalAlpha=1;
+      });
+    });
+  }
+  // robots: ground first, then aerial with shadow
+  const waits=new Set(k1>0?F[k1].waits:[]);
+  const order=SIM.robots.map((r,i)=>i).sort((a,b)=>SIM.robots[a].aerial-SIM.robots[b].aerial);
+  order.forEach(i=>{
+    const r=SIM.robots[i];let x=m+(pos[i][0]+.5)*cell, y=m+(N-1-pos[i][1]+.5)*cell;
+    if(r.aerial&&!SIM.cfg.cross){
+      ctx.fillStyle=T.ink;ctx.globalAlpha=.16;ctx.beginPath();ctx.ellipse(x,y+s*.5,s*.9,s*.35,0,0,Math.PI*2);ctx.fill();ctx.globalAlpha=1;
+      x-=cell*.1;y-=cell*.14;
+    }
+    if(waits.has(r.id)){ctx.strokeStyle=T.warn;ctx.lineWidth=2;ctx.setLineDash([3,3]);ctx.beginPath();ctx.arc(x,y,s*1.55,0,Math.PI*2);ctx.stroke();ctx.setLineDash([]);}
+    shape(r.type,x,y,s,T[r.type],T.surface,1.5);
+    if(r.aerial){ctx.fillStyle=T.surface;[[-1,-1],[1,-1],[1,1],[-1,1]].forEach(([dx,dy])=>{ctx.beginPath();ctx.arc(x+dx*s*.62,y+dy*s*.62,Math.max(1.2,s*.13),0,Math.PI*2);ctx.fill();});}
+    ctx.fillStyle="#fff";ctx.font=`600 ${fs}px "IBM Plex Mono",monospace`;ctx.textAlign="center";ctx.textBaseline="middle";
+    ctx.fillText(r.id,x,y+.5);
+  });
+}
+
+/* ---------- log ---------- */
+const logEl=$("log");
+let groups=[];
+function esc(s){return String(s).replace(/[&<>]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;"}[c]));}
+function rid(r){return `<span class="rid c-${r.type}">R${r.id}</span>`;}
+function buildLog(){
+  logEl.innerHTML="";groups=[];
+  SIM.frames.forEach((fr,k)=>{
+    const gEl=document.createElement("div");gEl.className="grp";gEl.hidden=k>0;
+    let html=`<span class="sh" data-seek="${k}">${k===0?"── setup ──":"── step "+String(k).padStart(3,"0")+" ──"}</span>`;
+    fr.events.forEach(e=>{
+      let who="";
+      if(e.r)who=rid(e.r)+" "+`<span class="k-move">${ABBR[e.r.type]}</span> `;
+      else if(e.pair&&e.k==="detect")who=e.pair.map(rid).join(" × ")+" ";
+      html+=`<div class="ln k-${e.k}"><span class="tag">${e.tag}</span>${who}${esc(e.text)}</div>`;
+    });
+    if(k>0&&fr.events.every(e=>e.k==="move"||e.k==="arrive")&&!fr.events.some(e=>e.k==="detect"))html+=`<div class="ln k-detect" style="opacity:.6"><span class="tag">CLEAR</span>no conflicts this step</div>`;
+    gEl.innerHTML=html;logEl.appendChild(gEl);groups.push(gEl);
+  });
+  const cur=document.createElement("div");cur.className="grp";cur.innerHTML='<span class="cursor" aria-hidden="true"></span>';logEl.appendChild(cur);
+  shownStep=-1;
+}
+logEl.addEventListener("click",e=>{const s=e.target.closest("[data-seek]");if(s){playing=false;target=null;t=+s.dataset.seek;syncUI(true);}});
+document.querySelectorAll(".chip").forEach(ch=>ch.addEventListener("click",()=>{
+  const on=ch.getAttribute("aria-pressed")!=="true";ch.setAttribute("aria-pressed",on);
+  logEl.classList.toggle("hide-"+ch.dataset.f,!on);
+}));
+
+/* ---------- UI sync ---------- */
+function curStep(){return Math.min(SIM.frames.length-1,Math.ceil(t-1e-9));}
+function syncUI(force){
+  const k=curStep(), last=SIM.frames.length-1, st=SIM.frames[k].stats;
+  $("sStep").innerHTML=`${k}<small> / ${last}</small>`;
+  $("sArr").innerHTML=`${st.arr}<small> / ${SIM.robots.length}</small>`;
+  $("sDet").textContent=st.det;$("sRes").textContent=st.res;$("sCrash").textContent=st.crash;
+  $("scrub").max=last;$("scrub").value=Math.round(t);$("scrubOut").textContent=`${k} / ${last}`;
+  const stEl=$("status");
+  if(k<last){stEl.textContent=playing?"Running":(k===0?"Ready":"Paused");stEl.className="status"+(playing?" run":"");}
+  else if(SIM.outcome==="done"){stEl.textContent=st.crash?"Done with collisions":"All delivered";stEl.className="status "+(st.crash?"bad":"ok");}
+  else{stEl.textContent=SIM.outcome==="deadlock"?"Deadlock":"Step limit";stEl.className="status bad";}
+  $("bPlay").setAttribute("aria-label",playing?"Pause":"Play");
+  $("playIco").innerHTML=playing?'<path d="M3 2h4v12H3zM9 2h4v12H9z"/>':'<path d="M4 2v12l10-6z"/>';
+  if(k!==shownStep||force){
+    groups.forEach((gEl,i)=>{gEl.hidden=i>k;gEl.classList.toggle("cur",i===k&&k>0);});
+    if(groups[k])logEl.scrollTop=logEl.scrollHeight;
+    shownStep=k;
+  }
+  draw();
+}
+
+/* ---------- playback loop ---------- */
+const BASE=1.6;
+function speed(){return BASE*parseFloat($("speed").value);}
+function loop(ts){
+  const dt=lastTs?Math.min(.1,(ts-lastTs)/1000):0;lastTs=ts;
+  if(SIM){
+    const last=SIM.frames.length-1;
+    if(playing){
+      if(reduceMotion){loop.acc=(loop.acc||0)+dt*speed();if(loop.acc>=1){loop.acc=0;t=Math.min(last,Math.floor(t)+1);}}
+      else t=Math.min(last,t+dt*speed());
+      if(t>=last){t=last;playing=false;}
+      syncUI();
+    }else if(target!==null){
+      if(reduceMotion){t=target;target=null;}
+      else{const dir=Math.sign(target-t);t+=dir*dt*speed()*1.6;if((dir>0&&t>=target)||(dir<0&&t<=target)||dir===0){t=target;target=null;}}
+      syncUI();
+    }
+  }
+  requestAnimationFrame(loop);
+}
+requestAnimationFrame(loop);
+
+function stepBy(d){if(!SIM)return;playing=false;const base=target!==null?target:Math.round(t);target=Math.max(0,Math.min(SIM.frames.length-1,base+d));syncUI();}
+$("bNext").onclick=()=>stepBy(1);
+$("bPrev").onclick=()=>stepBy(-1);
+$("bStart").onclick=()=>{playing=false;target=null;t=0;syncUI(true);};
+$("bPlay").onclick=togglePlay;
+function togglePlay(){if(!SIM)return;target=null;if(!playing&&t>=SIM.frames.length-1)t=0;playing=!playing;loop.acc=0;syncUI(true);}
+$("scrub").addEventListener("input",e=>{playing=false;target=null;t=+e.target.value;syncUI(true);});
+$("routes").addEventListener("change",draw);
+document.addEventListener("keydown",e=>{
+  if(e.target.closest("input,select,textarea,[contenteditable]"))return;
+  if(e.code==="Space"){e.preventDefault();togglePlay();}
+  else if(e.key==="ArrowRight"){e.preventDefault();stepBy(1);}
+  else if(e.key==="ArrowLeft"){e.preventDefault();stepBy(-1);}
+  else if(e.key==="Home"){e.preventDefault();$("bStart").click();}
+});
+
+/* ---------- config form ---------- */
+let lastRunKey="";
+function cfgKey(c){return JSON.stringify(c);}
+function onCfgChange(){
+  const c=readCfg();$("nOut").textContent=c.n+"×"+c.n;
+  const v=validate(c);const cap=$("cap");cap.textContent=v.msg;cap.className="hint"+(v.ok?"":" err");
+  $("runBtn").disabled=!v.ok;
+  $("dirty").textContent=SIM&&cfgKey(c)!==lastRunKey?"Settings changed. Run to apply.":"";
+}
+$("cfg").addEventListener("input",onCfgChange);
+$("cfg").addEventListener("change",onCfgChange);
+document.querySelectorAll("[data-step]").forEach(b=>b.addEventListener("click",()=>{const el=$(b.dataset.step);el.value=Math.max(0,Math.min(99,clampInt(el.value)+(+b.dataset.d)));onCfgChange();}));
+$("shuffle").onclick=()=>{$("seed").value=Math.floor(Math.random()*9000)+1000;onCfgChange();};
+function setRules(o){
+  document.getElementById(o.order==="xy"?"ordXY":"ordYX").checked=true;$("prio").value=o.prio;
+  document.getElementById(o.tie==="random"?"tieR":"tieI").checked=true;
+  ["iterate","hold","swap","sidestep","detour","cross"].forEach(k=>$(k).checked=o[k]);onCfgChange();
+}
+$("presetRepo").onclick=()=>setRules({order:"xy",prio:"closer",tie:"random",iterate:false,hold:false,swap:false,sidestep:false,detour:false,cross:false});
+$("presetSafe").onclick=()=>setRules({order:"xy",prio:"closer",tie:"random",iterate:true,hold:true,swap:true,sidestep:true,detour:true,cross:false});
+$("cfg").addEventListener("submit",e=>{e.preventDefault();run(true);});
+
+function run(autoplay){
+  const c=readCfg();if(!validate(c).ok)return;
+  SIM=simulate(c);lastRunKey=cfgKey(c);t=0;target=null;playing=!!autoplay;loop.acc=0;
+  buildLog();onCfgChange();syncUI(true);
+}
+onCfgChange();
+run(false);
+if(!W)resize();
+})();
+</script>
+
+</body>
+</html>

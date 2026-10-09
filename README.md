@@ -19,12 +19,22 @@ This project simulates an efficient management system for multiple types of robo
   - Ties are resolved randomly.
 - **Visualization**: Real-time plotting of robot movements using `matplotlib`.
 
+## Live Demo
+Try the interactive simulator in your browser: **https://dhruvpathak1.github.io/Warehouse_Robot_Management_System_Design/**
+
+- Set the grid size, the number of each robot type and the right-of-way rules, then run.
+- Autoplay or step through the animation one move at a time.
+- A terminal panel logs every move, each collision detected and how it was resolved.
+- "Repo rules" match the Python code in `src/`; "Safer rules" add re-checking, head-on swap detection, sidestepping and rerouting around parked robots.
+
 ## Technical Information
 
 ### Project Structure
 ```text
 .
 ├── assets/             # Documentation assets and images
+├── docs/               # Browser simulator served by GitHub Pages
+│   └── index.html
 ├── src/                # Source code
 │   ├── grid.py         # Grid management and visualization logic
 │   ├── robot.py        # Robot classes and property definitions
